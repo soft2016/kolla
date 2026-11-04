@@ -1,0 +1,11 @@
+---
+- project-template:
+    name: kolla-scenario-telemetry
+    description: |
+      Runs Kolla-Ansible Telemetry scenario jobs on particular Kolla changes.
+    check:
+      jobs:
+        - kolla-ansible-debian-trixie-telemetry: &files
+            files: ^kolla/docker\/(base|aodh|ceilometer|gnocchi|valkey|openstack-base)\/.*
+        - kolla-ansible-rocky-10-telemetry: *files
+        - kolla-ansible-ubuntu-noble-telemetry: *files

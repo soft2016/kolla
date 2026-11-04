@@ -1,0 +1,11 @@
+---
+- project-template:
+    name: kolla-scenario-ovn
+    description: |
+      Runs Kolla-Ansible OVN scenario jobs on particular Kolla changes.
+    check:
+      jobs:
+        - kolla-ansible-debian-trixie-ovn: &files
+            files: ^kolla/docker/(base|neutron|openstack-base|openvswitch|ovn|prometheus/prometheus-openstack-network-exporter)/
+        - kolla-ansible-rocky-10-ovn: *files
+        - kolla-ansible-ubuntu-noble-ovn: *files

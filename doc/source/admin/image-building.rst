@@ -1,44 +1,20 @@
-.. _image-building:
-
 =========================
 Building Container Images
 =========================
 
-Firstly, ensure kolla is installed or ready for development.
+Firstly, ensure ``kolla`` and the container engine of your choice is installed.
 
-Then the :command:`kolla-build` command is responsible for building
-Docker images.
-
-.. note::
-
-   When developing Kolla it can be useful to build images using files located in
-   a local copy of Kolla. Use the ``tools/build.py`` script instead of
-   :command:`kolla-build` command in all below instructions.
-
-Generating kolla-build.conf
-===========================
-
-Install tox and generate the build configuration. The build configuration is
-designed to hold advanced customizations when building images.
-
-If you have already cloned the Kolla Git repository to the ``kolla`` folder,
-generate the ``kolla-build.conf`` file using the following steps.
-
-If you don't, you can also run ``kolla-build`` without a
-``kolla-build.conf`` or with the file you find in the ``etc_examples``
-folder of the Kolla pip package. But you should only do that for
-testing purposes, if at all.
+Currently supported container engines are ``docker`` and ``podman``.
 
 .. code-block:: console
 
-   pip install tox
-   cd kolla/
-   tox -e genconfig
+   python3 -m pip install kolla
+   #only one of these is needed:
+   python3 -m pip install podman
+   python3 -m pip install docker
 
-The location of the generated configuration file is
-``etc/kolla/kolla-build.conf``, it can also be copied to ``/etc/kolla``. The
-default location is one of ``/etc/kolla/kolla-build.conf`` or
-``etc/kolla/kolla-build.conf``.
+Then, the :command:`kolla-build` command is available for building
+Docker images.
 
 Building kolla images
 =====================
@@ -49,13 +25,8 @@ In general, images are built like this:
 
    kolla-build
 
-* For development, run:
-
-.. code-block:: console
-
-    python tools/build.py
-
-By default, the above command would build all images based on CentOS image.
+By default, the above command would build all images based on a Rocky Linux
+image.
 
 The operator can change the base distro with the ``-b`` option:
 
@@ -63,24 +34,15 @@ The operator can change the base distro with the ``-b`` option:
 
    kolla-build -b ubuntu
 
-* For development, run:
+There are following distros (bases) available for building images:
 
-.. code-block:: console
-
-    python tools/build.py -b ubuntu
-
-There are following distros available for building images:
-
-- centos
 - debian
-- oraclelinux
-- rhel
+- rocky
 - ubuntu
 
-.. warning::
-
-   Fedora images are deprecated since Newton and will be removed
-   in the future.
+See the :ref:`support matrix <support-matrix-base-images>` for information on
+supported base image distribution versions and supported images on each
+distribution.
 
 It is possible to build only a subset of images by specifying them on the
 command line:
@@ -89,14 +51,8 @@ command line:
 
    kolla-build keystone
 
-* For development, run:
-
-.. code-block:: console
-
-    python tools/build.py keystone
-
 In this case, the build script builds all images whose name contains the
-``keystone`` string along with their dependencies.
+``keystone`` string, along with their parents.
 
 Multiple names may be specified on the command line:
 
@@ -104,23 +60,24 @@ Multiple names may be specified on the command line:
 
    kolla-build keystone nova
 
-* For development, run:
+Each string is actually a regular expression so one can do:
 
 .. code-block:: console
 
-    python tools/build.py keystone nova
+   kolla-build ^nova-
 
-The set of images built can be defined as a profile in the ``profiles`` section
-of ``kolla-build.conf``. Later, profile can be specified by ``--profile`` CLI
-argument or ``profile`` option in ``kolla-build.conf``. Kolla provides some
-pre-defined profiles:
+``kolla-build`` can be configured via an INI file, canonically named
+``kolla-build.conf`` and placed in ``/etc/kolla``. A custom path to it can be
+set via the ``--config-file`` argument. Most CLI arguments can be set via this
+config file. Remember to convert the names from hyphenated to underscored.
+Run ``kolla-build --help`` to see all available options.
 
-- ``infra`` infrastructure-related images
-- ``main`` core OpenStack images
-- ``aux`` auxiliary images such as trove, magnum, ironic
-- ``default`` minimal set of images for a working deploy
+The set of images to build can be defined as a profile in the ``profiles``
+section of ``kolla-build.conf``.
+Then, profile can be specified by ``--profile`` CLI argument or ``profile``
+option in ``kolla-build.conf``.
 
-For example, since Magnum requires Heat, add the following profile to
+For example, since Magnum requires Heat, one could add the following profile to
 ``profiles`` section in ``kolla-build.conf``:
 
 .. path /etc/kolla/kolla-build.conf
@@ -129,13 +86,14 @@ For example, since Magnum requires Heat, add the following profile to
    [profiles]
    magnum = magnum,heat
 
-These images can be built using command line:
+These images could then be built using command line:
 
 .. code-block:: console
 
    kolla-build --profile magnum
 
-Or put following line to ``DEFAULT`` section in ``kolla-build.conf`` file:
+Or putting the following line in the ``DEFAULT`` section in
+``kolla-build.conf`` file:
 
 .. path /etc/kolla/kolla-build.conf
 .. code-block:: ini
@@ -151,53 +109,36 @@ repository named ``mykollarepo``:
 
    kolla-build -n mykollarepo --push
 
-To push images to a `local registry
-<https://docs.openstack.org/kolla-ansible/latest/user/multinode.html#deploy-a-registry>`_,
-use ``--registry`` flag:
+To push images to a :kolla-ansible-doc:`local registry
+<user/multinode.html#deploy-a-registry>`, use the ``--registry`` flag:
 
 .. code-block:: console
 
-   kolla-build --registry 172.22.2.81:5000 --push
+   kolla-build --registry 172.22.2.81:4000 --push
 
 Build OpenStack from source
 ===========================
 
-When building images, there are two methods of the OpenStack install. One is
-``binary``. Another is ``source``. The ``binary`` means that OpenStack will be
-installed from apt/yum. And the ``source`` means that OpenStack will be
-installed from source code. The default method of the OpenStack install is
-``binary``. It can be changed to ``source`` using the ``-t`` option:
+The locations of OpenStack source code are written in ``kolla-build.conf``.
+The source's ``type`` supports ``url``, ``git`` and ``local``. The
+``location`` of the ``local`` source type can point to either a directory
+containing the source code or to a tarball of the source. The ``local`` source
+type permits to make the best use of the Docker cache.  A source may be
+disabled by setting ``enabled`` to ``False``.
 
-.. code-block:: console
+The ``kolla-build.conf`` file could look like this:
 
-   kolla-build -t source
-
-* For development, run:
-
-.. code-block:: console
-
-    python tools/build.py -t source
-
-The locations of OpenStack source code are written in
-``etc/kolla/kolla-build.conf``.
-Now the source type supports ``url``, ``git``, and ``local``. The location of
-the ``local`` source type can point to either a directory containing the source
-code or to a tarball of the source. The ``local`` source type permits to make
-the best use of the Docker cache.
-
-The ``etc/kolla/kolla-build.conf`` file looks like:
-
-.. path etc/kolla/kolla-build.conf
+.. path /etc/kolla/kolla-build.conf
 .. code-block:: ini
 
-   [glance-base]
+   [horizon]
    type = url
-   location = https://tarballs.openstack.org/glance/glance-master.tar.gz
+   location = https://tarballs.openstack.org/horizon/horizon-master.tar.gz
 
    [keystone-base]
    type = git
-   location = https://git.openstack.org/openstack/keystone
-   reference = stable/mitaka
+   location = https://opendev.org/openstack/keystone
+   reference = stable/2025.2
 
    [heat-base]
    type = local
@@ -206,111 +147,132 @@ The ``etc/kolla/kolla-build.conf`` file looks like:
    [ironic-base]
    type = local
    location = /tmp/ironic.tar.gz
-
-To build RHEL containers, it is necessary to include registration with RHN
-of the container runtime operating system.To obtain a RHN
-username/password/pool id, contact Red Hat. Use a template's header block
-overrides file, add the following:
-
-.. code-block:: console
-
-   RUN subscription-manager register --user=<user-name> \
-   --password=<password> && subscription-manager attach --pool <pool-id>
-
-Dockerfile Customisation
-========================
-
-As of the Newton release, the ``kolla-build`` tool provides a Jinja2 based
-mechanism which allows operators to customise the Dockerfiles used to generate
-Kolla images.
-
-This offers a lot of flexibility on how images are built, for example,
-installing extra packages as part of the build, tweaking settings, installing
-plugins, and numerous other capabilities. Some of these examples are described
-in more detail below.
+   enabled = False
 
 .. note::
 
-   The docker file for each image is found in docker/<image name> directory.
+   Note that the name of the section should exactly match the image name
+   you are trying to change source location for.
 
-Generic Customisation
+If using the ``local`` source type, the ``--locals-base`` flag can be used to
+define a path prefix, which you can reference in the config.
+
+.. path etc/kolla/kolla-build.conf
+.. code-block:: ini
+
+  [DEFAULTS]
+  locals_base = /home/kolla/src
+
+  [heat-base]
+  type = local
+  location = $locals_base/heat
+
+.. _dockerfile-customisation:
+
+Dockerfile customisation
+========================
+
+The ``kolla-build`` tool provides a Jinja2-based
+mechanism which allows operators to customise the Dockerfiles used to generate
+Kolla images.
+
+This offers a lot of flexibility on how images are built, for example:
+installing extra packages as part of the build, tweaking settings or installing
+plugins. Examples of these are described in more detail below.
+
+.. note::
+
+   The Docker file Jinja2 template for each image is found in subdirectories
+   of the ``docker`` directory included in the ``kolla`` package.
+
+Using a different base image
+----------------------------
+
+Base image can be specified using ``--base-image``:
+
+.. code-block:: console
+
+   kolla-build --base-image <image-identifier>
+
+The ``image-identifier`` accepts any format that Docker accepts when
+referencing an image.
+
+Generic customisation
 ---------------------
 
-Anywhere the line ``{% block ... %}`` appears may be modified. The Kolla
-community have added blocks throughout the Dockerfiles where we think they will
-be useful, however, operators are free to submit more if the ones provided are
-inadequate.
-
+Kolla templates are designed such that each Docker file has logical sections
+represented by Jinja2's named ``block`` section directives. These can be
+overridden at will by Kolla users.
 The following is an example of how an operator would modify the setup steps
 within the Horizon Dockerfile.
 
 First, create a file to contain the customisations, for example:
-``template-overrides.j2``. In this place the following:
+``template-overrides.j2``. Fill it with the following contents:
 
-.. code-block:: console
+.. code-block:: jinja
 
    {% extends parent_template %}
 
    # Horizon
-   {% block horizon_redhat_binary_setup %}
+   {% block horizon_ubuntu_source_setup %}
    RUN useradd --user-group myuser
    {% endblock %}
 
-Then rebuild the horizon image, passing the ``--template-override`` argument:
+Then rebuild the ``horizon`` image, passing the ``--template-override``
+argument:
 
 .. code-block:: console
 
-   kolla-build --template-override template-overrides.j2 horizon
-
-* For development, run:
-
-.. code-block:: console
-
-    python tools/build.py --template-override template-overrides.j2 horizon
+   kolla-build --template-override template-overrides.j2 ^horizon$
 
 .. note::
 
-   The above example will replace all contents from the original block. Hence
-   in many cases one may want to copy the original contents of the block before
-   making changes.
+   The above example will replace all contents of the original block. Hence,
+   one may want to copy the original contents of the block before and modify it.
+   Do note it makes the customisations ignore changes in Kolla upstream.
 
-   More specific functionality such as removing/appending entries is available
-   for packages, described in the next section.
+   We recommend users use more specific customisation functionalities, such
+   as removing/appending entries for packages. These other customisations are
+   described in the following sections.
 
-Package Customisation
----------------------
+Two block series are of particular interest and are safe to override as they
+are empty by design.
+The top of each Dockerfile includes ``<image_name>_header`` block which can
+be used for early customisations, such as RHN registration described later.
+The bottom of each Dockerfile includes ``<image_name>_footer`` block which
+is intended for image-specific modifications.
+Do note to use the underscored name of the image, i.e., replace dashes with
+underscores.
+All leaf Dockerfiles, i.e. those meant for direct consumption, additionally
+have a ``footer`` block which is then guaranteed to exist once at the very
+end of the image recipe chain.
+
+Packages customisation
+----------------------
 
 Packages installed as part of an image build can be overridden, appended to,
 and deleted. Taking the Horizon example, the following packages are installed
-as part of a binary install type build:
+as part of a package install (among others):
 
-* ``openstack-dashboard``
-* ``httpd``
-* ``mod_wsgi``
-* ``mod_ssl``
 * ``gettext``
+* ``locales``
 
 To add a package to this list, say, ``iproute``, first create a file,
-for example, ``template-overrides.j2``. In this place the following:
+for example, ``template-overrides.j2``. In it place the following:
 
-.. code-block:: console
+.. code-block:: jinja
 
    {% extends parent_template %}
 
    # Horizon
    {% set horizon_packages_append = ['iproute'] %}
 
-Then rebuild the horizon image, passing the ``--template-override`` argument:
+Then rebuild the ``horizon`` image, passing the ``--template-override``
+argument:
 
 .. code-block:: console
 
-   kolla-build --template-override template-overrides.j2 horizon
-
-* For development, run:
-
-.. code-block:: console
-
-    python tools/build.py --template-override template-overrides.j2 horizon
+   kolla-build --template-override template-overrides.j2 ^horizon$
 
 Alternatively ``template_override`` can be set in ``kolla-build.conf``.
 
@@ -327,71 +289,219 @@ append
 remove
     Remove a package from the default list.
 
-Using a different base image
-----------------------------
+To remove a package from that list, say ``locales``, one would do:
 
-Base-image can be specified by argument ``--base-image``. For example:
-
-.. code-block:: console
-
-   kolla-build --base-image registry.access.redhat.com/rhel7/rhel --base rhel
-
-Plugin Functionality
---------------------
-
-The Dockerfile customisation mechanism is also useful for adding/installing
-plugins to services. An example of this is Neutron's third party L2 `drivers
-<https://wiki.openstack.org/wiki/Neutron#Plugins>`_.
-
-The bottom of each Dockerfile contains two blocks, ``image_name_footer``, and
-``footer``. The ``image_name_footer`` is intended for image specific
-modifications, while the ``footer`` can be used to apply a common set of
-modifications to every Dockerfile.
-
-For example, to add the ``networking-cisco`` plugin to the ``neutron_server``
-image, one may want to add the following to the ``template-override`` file:
-
-.. code-block:: console
+.. code-block:: jinja
 
    {% extends parent_template %}
 
-   {% block neutron_server_footer %}
-   RUN git clone https://git.openstack.org/openstack/networking-cisco \
-       && pip --no-cache-dir install networking-cisco
-   {% endblock %}
+   # Horizon
+   {% set horizon_packages_remove = ['locales'] %}
 
-Astute readers may notice there is one problem with this however. Assuming
-nothing else in the Dockerfile changes for a period of time, the above ``RUN``
-statement will be cached by Docker, meaning new commits added to the Git
-repository may be missed on subsequent builds. To solve this the Kolla build
-tool also supports cloning additional repositories at build time, which will be
-automatically made available to the build, within an archive named
-``plugins-archive``.
+An example of this is the Grafana plugins, which are mentioned in the next
+section.
 
-.. note::
+Grafana plugins
+^^^^^^^^^^^^^^^
 
-   The following is available for source build types only.
+Additional Grafana plugins can be installed by adding the plugin name to the
+``grafana_plugins_append`` list. Plugins can also be removed by adding the
+plugin name to the ``grafana_plugins_remove`` list. Additionally the entire
+list can be overridden by setting the ``grafana_plugins_override`` variable.
 
-To use this, add a section to ``/etc/kolla/kolla-build.conf`` in the following
-format:
+.. code-block:: ini
+
+   grafana_plugins_append:
+      - grafana-piechart-panel
+      - vonage-status-panel
+
+Patching customization
+----------------------
+
+Kolla provides functionality to apply patches to Docker images during the build
+process. This allows users to modify existing files or add new ones as part of
+the image creation.
+
+You need to define a ``patches_path`` in the ``[DEFAULT]`` section of
+the ``/etc/kolla/kolla-build.conf`` file. This directory will be used to store
+patches for the images.
+
+.. path etc/kolla/kolla-build.conf
+.. code-block:: ini
+
+  [DEFAULT]
+  patches_path = /path/to/your/patches
+
+Create a directory for each image you want to patch, following a directory
+structure similar to the Debian patch quilt format. Refer to
+`quilt documentation <https://linux.die.net/man/1/quilt>`_. for more details.
+
+- ``<patches_path>/image_name/`` : The directory for the specific image.
+- ``<patches_path>/image_name/some-patch`` : Contains the patch content.
+- ``<patches_path>/image_name/another-patch`` : Contains the patch content.
+- ``<patches_path>/image_name/series`` : Lists the order in which the patches
+  will be applied.
+
+For example, if you want to patch the ``nova-api`` image, the structure would
+look like this:
+
+.. code-block:: console
+
+   /path/to/your/patches/nova-api/some-patch
+   /path/to/your/patches/nova-api/another-patch
+   /path/to/your/patches/nova-api/series
+
+The ``series`` file should list the patches in the order they should be
+applied:
+
+.. code-block:: console
+
+   some-patch
+   another-patch
+
+When the images are built using ``kolla-build``, the patches defined in the
+``patches_path`` will automatically be applied to the corresponding images.
+
+After the patches are applied, Kolla stores information about the applied
+patches in ``/etc/kolla/patched``. The patch files themselves are stored
+in the ``/patches`` directory within the image. This allows you to track
+which patches have been applied to each image for debugging or
+verification purposes.
+
+Python packages build options
+-----------------------------
+
+The PyPI mirror used during image builds can be configured directly in
+``kolla-build.conf``:
 
 .. path /etc/kolla/kolla-build.conf
 .. code-block:: ini
 
-   [<image>-plugin-<plugin-name>]
+   [DEFAULT]
+   pip_index_url = https://pypi.example.com/simple
+   pip_trusted_host = pypi.example.com
+   pip_extra_index_url = https://wheels.example.com/simple
 
-Where ``<image>`` is the image that the plugin should be installed into, and
-``<plugin-name>`` is the chosen plugin identifier.
+These options set the ``PIP_INDEX_URL``, ``PIP_TRUSTED_HOST``, and
+``PIP_EXTRA_INDEX_URL`` ARG variables in the base image via the
+``base_pip_conf`` Dockerfile block. The ``pip_extra_index_url`` option is
+optional. For further customisation, the block ``base_pip_conf`` can be
+overridden via the template_override mechanism.
 
-Continuing with the above example, add the following to
-``/etc/kolla/kolla-build.conf``:
+To override PYPI upper-constraints of all OpenStack images, you can
+define the source location of openstack-base. in ``kolla-build.conf``.
+
+Upstream repository of `openstack-base (requirements) <https://opendev.org/openstack/requirements>`__
+has a source of
+`upper constraints file <https://opendev.org/openstack/requirements/src/branch/master/upper-constraints.txt>`__.
+
+Make a fork or clone the repository then customise ``upper-constraints.txt``
+and define the location of ``openstack-base`` in ``kolla_build.conf``.
+
+.. path /etc/kolla/kolla-build.conf
+.. code-block:: ini
+
+   # These examples use upstream openstack-base as a demonstration
+   # To use custom openstack-base, make changes accordingly
+
+   # Using git source
+   [openstack-base]
+   type = git
+   location = https://opendev.org/openstack/requirements
+   reference = master
+
+   # Using URL source
+   [openstack-base]
+   type = url
+   location = https://tarballs.opendev.org/openstack/requirements/requirements-master.tar.gz
+
+   # Using local source
+   [openstack-base]
+   type = local
+   location = /home/kolla/src/requirements
+
+To remove or change the version of specific Python packages in
+``openstack-base`` upper-constraints, you can use the block
+``openstack_base_override_upper_constraints`` in your template file,
+for example, ``template-overrides.j2``:
+
+.. code-block:: jinja
+
+   {% block openstack_base_override_upper_constraints %}
+   RUN {{ macros.upper_constraints_version_change("sqlparse", "0.4.4", "0.5.0") }}
+   RUN {{ macros.upper_constraints_remove("reno") }}
+   {% endblock %}
+
+``kolla-toolbox`` image needs different approach as it does not uses
+``openstack-base`` as a base image.
+A variable ``UPPER_CONSTRAINTS_FILE`` is set in the
+Dockerfile of ``kolla-toolbox``.
+To change variable, add the following contents to the
+``kolla_toolbox_pip_conf`` block in your template file, for example,
+``template-overrides.j2``:
+
+.. code-block:: jinja
+
+   {% block kolla_toolbox_pip_conf %}
+   ENV UPPER_CONSTRAINTS_FILE=https://releases.openstack.org/constraints/upper/master
+   {% endblock %}
+
+.. note::
+
+   ``UPPER_CONSTRAINTS_FILE`` must be a valid URL to the file
+
+Plugin functionality
+--------------------
+
+The Dockerfile customisation mechanism is useful for adding/installing
+plugins to services. An example of this is Neutron's third party L2 `drivers
+<https://wiki.openstack.org/wiki/Neutron#Plugins>`_.
+
+For example, to add the ``networking-cisco`` plugin to the ``neutron_server``
+image, one may be tempted to add the following to the ``template-override``
+file:
+
+.. warning::
+
+   Do NOT do the below. Read on for why.
+
+.. code-block:: jinja
+
+   {% extends parent_template %}
+
+   {% block neutron_server_footer %}
+   RUN git clone https://opendev.org/x/networking-cisco \
+       && python3 -m pip --no-cache-dir install networking-cisco
+   {% endblock %}
+
+Some readers may notice there is one problem with this, however. Assuming
+nothing else in the Dockerfile changes for a period of time, the above ``RUN``
+statement will be cached by Docker, meaning new commits added to the Git
+repository may be missed on subsequent builds. To solve this, the
+``kolla-build`` tool also supports cloning additional repositories at build
+time, which will be automatically made available to the build, within an
+archive named ``plugins-archive``.
+
+To use this, add a section to ``kolla-build.conf`` in the following format:
+
+.. path /etc/kolla/kolla-build.conf
+.. code-block:: ini
+
+   [<image-name>-plugin-<plugin-name>]
+
+Where ``<image-name>`` is the hyphenated name of the image that the plugin
+should be installed into, and ``<plugin-name>`` is the chosen plugin
+identifier.
+
+Continuing with the above example, one could add the following to
+``kolla-build.conf``:
 
 .. path /etc/kolla/kolla-build.conf
 .. code-block:: ini
 
    [neutron-server-plugin-networking-cisco]
    type = git
-   location = https://git.openstack.org/openstack/networking-cisco
+   location = https://opendev.org/x/networking-cisco
    reference = master
 
 The build will clone the repository, resulting in the following archive
@@ -405,48 +515,61 @@ structure:
 
 The template now becomes:
 
-.. code-block:: console
+.. code-block:: jinja
 
    {% block neutron_server_footer %}
    ADD plugins-archive /
-   pip --no-cache-dir install /plugins/*
+   python3 -m pip --no-cache-dir install /plugins/*
    {% endblock %}
 
-Many of the Dockerfiles already copy the ``plugins-archive`` to the image and
-install available plugins at build time.
+Some plugins are installed by default. For images with default plugins, the
+Dockerfiles already copy the ``plugins-archive`` to the image and install
+available plugins at build time. These default plugins may be disabled by
+setting ``enabled`` to ``False`` in the relevant plugin source configuration
+section in ``kolla-build.conf``.
 
-Additions Functionality
+Neutron plugins
+^^^^^^^^^^^^^^^
+
+One example of a service with many available plugins is Neutron.
+The ``neutron-base`` image Dockerfile has plugins archive copying and
+installation enabled already.
+In the ``contrib`` directory of Kolla (as available in the repository,
+the tarball or the ``share`` directory of the installation target), there
+is a ``neutron-plugins`` directory with examples of Neutron plugins
+definitions.
+Some of these plugins used to be enabled by default but, due to
+their release characteristic, have been excluded from the default builds.
+Please read the included ``README.rst`` to learn how to apply them.
+
+
+Additions functionality
 -----------------------
 
-The Dockerfile customisation mechanism is also useful for adding/installing
+The Dockerfile customisation mechanism is useful for adding/installing
 additions into images. An example of this is adding your jenkins job build
-metadata (say formatted into a jenkins.json file) into the image.
+metadata (say, formatted into a jenkins.json file) into the image.
 
 Similarly to the plugins mechanism, the Kolla build tool also supports cloning
 additional repositories at build time, which will be automatically made
 available to the build, within an archive named ``additions-archive``. The main
 difference between ``plugins-archive`` and ``additions-archive`` is that
-``plugins-archive`` is copied to the relevant images and processed to install
-available plugins while ``additions-archive`` processing is left to the Kolla
-user.
+``plugins-archive`` is automatically copied in many images and processed to
+install available plugins while ``additions-archive`` processing is left solely
+to the Kolla user.
 
-.. note::
-
-   The following is available for source build types only.
-
-To use this, add a section to ``/etc/kolla/kolla-build.conf`` in the following
-format:
+To use this, add a section to ``kolla-build.conf`` in the following format:
 
 .. path /etc/kolla/kolla-build.conf
 .. code-block:: ini
 
    [<image>-additions-<additions-name>]
 
-Where ``<image>`` is the image that the plugin should be installed into, and
-``<additions-name>`` is the chosen additions identifier.
+Where ``<image-name>`` is the hyphenated name of the image that the additions
+should be copied into, and ``<additions-name>`` is the chosen additions
+identifier.
 
-Continuing with the above example, add the following to
-``/etc/kolla/kolla-build.conf`` file:
+For example, one could add the following to ``kolla-build.conf`` file:
 
 .. path /etc/kolla/kolla-build.conf
 .. code-block:: ini
@@ -464,45 +587,266 @@ structure:
    |__ additions
        |__jenkins
 
-Alternatively, it is also possible to create an ``additions-archive.tar`` file
-yourself without passing by ``/etc/kolla/kolla-build.conf`` in order to use the
-feature for binary build type.
+The template becomes now:
 
-The template now becomes:
-
-.. code-block:: console
+.. code-block:: jinja
 
    {% block neutron_server_footer %}
    ADD additions-archive /
    RUN cp /additions/jenkins/jenkins.json /jenkins.json
    {% endblock %}
 
-Custom Repos
-------------
+Custom docker templates
+-----------------------
 
-Red Hat
--------
-The build method allows the operator to build containers from custom repos.
-The repos are accepted as a list of comma separated values and can be in the
-form of ``.repo``, ``.rpm``, or a url. See examples below.
+In order to unify the process of managing OpenStack-related projects, Kolla
+provides a way of building images for external 'non-built-in' projects.
 
-Update ``rpm_setup_config`` in ``/etc/kolla/kolla-build.conf``:
+If the template for a 'non-built-in' project meets Kolla template standards,
+an operator can provide a root directory with a template via the
+``--docker-dir`` CLI option (can be specified multiple times).
+
+All Kolla's jinja2 macros should be available the same as for built-in
+projects with some notes:
+
+- The ``configure_user`` macro. As the 'non-built-in' user is unknown to Kolla,
+  there are no default values for user ID and group ID to use.
+  To use this macro, an operator should specify "non-default" user details
+  with ``<custom_user_name>-user`` configuration section and include info
+  for ``uid`` and ``gid`` at least.
+
+Let's look into how an operator can build an image for an in-house project
+with Kolla using `openstack/releases <https://opendev.org/openstack/releases>`_
+project.
+
+First, create a ``Dockerfile.j2`` template for the project.
+
+.. path /home/kolla/custom-kolla-docker-templates/releaser/Dockerfile.j2
+.. code-block:: jinja
+
+   FROM {{ namespace }}/{{ image_prefix }}openstack-base:{{ tag }}
+
+   {% block labels %}
+   LABEL maintainer="{{ maintainer }}" name="{{ image_name }}"
+   {% endblock %}
+
+   {% block releaser_header %}{% endblock %}
+
+   {% import "macros.j2" as macros with context %}
+
+   {{ macros.configure_user(name='releaser') }}
+
+   RUN ln -s releaser-source/* /releaser \
+       && {{ macros.install_pip(['/releaser-source']  | customizable("pip_packages")) }} \
+       && mkdir -p /etc/releaser \
+       && chown -R releaser: /etc/releaser \
+       && chmod 750 /etc/sudoers.d \
+       && touch /usr/local/bin/kolla_releaser_extend_start \
+       && chmod 644 /usr/local/bin/kolla_extend_start /usr/local/bin/kolla_releaser_extend_start
+
+   {% block footer %}{% endblock %}
+
+Suggested directory structure:
+
+.. code-block:: console
+
+   custom-kolla-docker-templates
+   |__ releaser
+       |__ Dockerfile.j2
+
+Then, modify Kolla's configuration so the engine can download sources and
+configure users.
 
 .. path /etc/kolla/kolla-build.conf
 .. code-block:: ini
 
-   rpm_setup_config = https://trunk.rdoproject.org/centos7/currrent/delorean.repo,https://trunk.rdoproject.org/centos7/delorean-deps.repo
+   [releaser]
+   type = git
+   location = https://opendev.org/openstack/releases
+   reference = master
+
+   [releaser-user]
+   uid = 53001
+   gid = 53001
+
+Last pre-check before building a new image - ensure that the new template
+is visible for Kolla:
+
+.. code-block:: console
+
+   $ kolla-build --list-images --docker-dir custom-kolla-docker-templates "^releaser$"
+   1 : base
+   2 : releaser
+   3 : openstack-base
+
+And finally, build the ``releaser`` image, passing the ``--docker-dir``
+argument:
+
+.. code-block:: console
+
+   kolla-build --docker-dir custom-kolla-docker-templates "^releaser$"
+
+Can I use the ``--template-override`` option for custom templates? Yes!
+
+Custom repos
+------------
+
+repos.yaml
+^^^^^^^^^^
+
+Kolla uses ``kolla/template/repos.yaml`` to define repositories used during
+image builds. Each entry is keyed by a logical name and contains the
+information needed to configure the repository.
+
+Repositories marked with ``distro: True`` are default repos that require no
+additional configuration. For RPM-based distros they are enabled via
+``dnf config-manager --enable``; for Debian-based distros they are a no-op
+as the sources are already provided by the base image. Examples include
+``crb``, ``extras``, and the base repos ``baseos`` and ``appstream`` for
+Rocky Linux, as well as ``debian``, ``debian-security``, ``ubuntu``,
+``ubuntu-security``.
+
+Repositories without ``distro: True`` are fully templated into a new
+repository file and must provide at least one of ``baseurl``, ``metalink``,
+or ``mirrorlist`` (RPM), or ``url`` (Debian/Ubuntu).
+
+To override repositories (e.g. to point base repos at a local mirror),
+provide a custom ``repos.yaml`` via the ``--repos-yaml`` option and supply
+entries without ``distro: True`` and with the desired URL.
+
+Example for Rocky Linux:
+
+.. code-block:: yaml
+
+   rocky:
+     baseos:
+       name: "baseos"
+       baseurl: "https://my-mirror.example.com/rocky/10/BaseOS/$basearch/os/"
+       gpgkey: "file:///etc/pki/rpm-gpg/RPM-GPG-KEY-Rocky-10"
+     appstream:
+       name: "appstream"
+       baseurl: "https://my-mirror.example.com/rocky/10/AppStream/$basearch/os/"
+       gpgkey: "file:///etc/pki/rpm-gpg/RPM-GPG-KEY-Rocky-10"
+     crb:
+       name: "crb"
+       baseurl: "https://my-mirror.example.com/rocky/10/CRB/$basearch/os/"
+       gpgkey: "file:///etc/pki/rpm-gpg/RPM-GPG-KEY-Rocky-10"
+
+Example for Debian:
+
+.. code-block:: yaml
+
+   debian:
+     debian:
+       component: "main"
+       gpg_key: "/usr/share/keyrings/debian-archive-keyring.gpg"
+       suite: "trixie trixie-updates trixie-backports"
+       url: "https://my-mirror.example.com/debian"
+     debian-security:
+       component: "main"
+       gpg_key: "/usr/share/keyrings/debian-archive-keyring.gpg"
+       suite: "trixie-security"
+       url: "https://my-mirror.example.com/debian-security"
+
+Example for Ubuntu:
+
+.. code-block:: yaml
+
+   ubuntu:
+     ubuntu:
+       component: "main universe"
+       gpg_key: "/usr/share/keyrings/ubuntu-archive-keyring.gpg"
+       suite: "noble noble-updates noble-backports"
+       url: "https://my-mirror.example.com/ubuntu/"
+     ubuntu-security:
+       component: "main universe"
+       gpg_key: "/usr/share/keyrings/ubuntu-archive-keyring.gpg"
+       suite: "noble-security"
+       url: "https://my-mirror.example.com/ubuntu/"
+
+.. code-block:: ini
+
+   repos_yaml = /path/to/custom-repos.yaml
+
+When overriding a base repo, any existing ``.repo`` file on the image
+containing that repository ID is automatically removed before the new one
+is created.
+
+Some distro repos share a single ``.repo`` file on disk (for example,
+``baseos``, ``appstream``, and ``crb`` all live in ``rocky.repo`` on Rocky
+Linux). These repos are annotated with a ``file_group`` field in
+``repos.yaml`` that names the shared file. If any repo in a ``file_group``
+is overridden, all other repos sharing that ``file_group`` must also be
+overridden — otherwise removing the shared file would silently disable them.
+Kolla validates this at build time and raises an error listing the missing
+overrides. For Rocky Linux this means overriding ``baseos`` or ``appstream``
+requires also overriding ``crb``.
+
+Build-time-only repositories
+""""""""""""""""""""""""""""
+
+Repositories that point to CI mirrors or other infrastructure-internal URLs
+should not be baked into the final image — they may be unreachable at runtime
+and would expose internal infrastructure details. Mark such repositories with
+``build_only: true`` to have kolla automatically restore or remove the
+repository file at the end of each image build.
+
+When ``build_only: true`` is set on a repository:
+
+* **Before** writing the mirror configuration, kolla backs up the existing
+  repository file (if any) to ``/tmp/kolla-repos-backup/``.
+* The repository file is written normally so all package installations in that
+  image can use the mirror.
+* **After** all package installations, kolla injects a cleanup step into every
+  rendered Dockerfile that restores the original file from the backup, or
+  removes the file entirely if no original existed.
+
+This means the repository files in the final image contain the upstream URLs
+(or are absent, leaving the distro defaults in place) rather than mirror URLs.
+
+Example — Debian with a CI mirror marked build-time-only:
+
+.. code-block:: yaml
+
+   debian:
+     debian:
+       build_only: true
+       component: "main"
+       gpg_key: "/usr/share/keyrings/debian-archive-keyring.gpg"
+       suite: "trixie trixie-updates trixie-backports"
+       url: "http://ci-mirror.internal/debian"
+     debian-security:
+       build_only: true
+       component: "main"
+       gpg_key: "/usr/share/keyrings/debian-archive-keyring.gpg"
+       suite: "trixie-security"
+       url: "http://ci-mirror.internal/debian-security"
+
+.. note::
+
+   ``build_only: true`` is only effective for non-distro repository entries
+   (those that write a ``.repo`` or ``.sources`` file). Repositories with
+   ``distro: True`` are a no-op in ``handle_repos()`` and require no cleanup.
+
+Red Hat
+^^^^^^^
+
+Kolla allows the operator to build containers using custom repos.
+The repos are accepted as a list of comma separated values and can be in the
+form of ``.repo``, ``.rpm``, or a url.
 
 If specifying a ``.repo`` file, each ``.repo`` file will need to exist in the
-same directory as the base Dockerfile (``kolla/docker/base``):
+same directory as the base Dockerfile (``kolla/docker/base``) or you need to
+specify a url:
 
 .. path kolla/docker/base
 .. code-block:: ini
 
-   rpm_setup_config = epel.repo,delorean.repo,delorean-deps.repo
+   rpm_setup_config = epel.repo,https://remote-server.com/your-repo.repo
 
-Ubuntu
-------
+Debian / Ubuntu
+^^^^^^^^^^^^^^^
+
 For Debian based images, additional apt sources may be added to the build as
 follows:
 
@@ -510,53 +854,25 @@ follows:
 
    apt_sources_list = custom.list
 
-Known issues
-============
-
-#. Can't build base image because Docker fails to install systemd or httpd.
-
-   There are some issues between Docker and AUFS. The simple workaround to
-   avoid the issue is that add ``-s devicemapper`` or ``-s btrfs`` to
-   ``DOCKER_OPTS``. Get more information about `the issue from the Docker bug
-   tracker <https://github.com/docker/docker/issues/6980>`_ and `how to
-   configure Docker with BTRFS back end <https://docs.docker.com/engine/userguide/storagedriver/btrfs-driver/#prerequisites>`_.
-
-#. Mirrors are unreliable.
-
-   Some of the mirrors Kolla uses can be unreliable. As a result occasionally
-   some containers fail to build. To rectify build problems, the build tool
-   will automatically attempt three retries of a build operation if the first
-   one fails. The retry count is modified with the ``--retries`` option.
-
-Kolla-ansible with Local Registry
----------------------------------
-
-To make kolla-ansible pull images from a local registry, set
-``"docker_registry"`` to ``"172.22.2.81:5000"`` in
-``"/etc/kolla/globals.yml"``. Make sure Docker is allowed to pull images from
-insecure registry. See
-`Docker Insecure Registry
-<https://docs.openstack.org/kolla-ansible/latest/user/multinode.html#deploy-a-registry>`_.
-
 Building behind a proxy
 -----------------------
 
 We can insert http_proxy settings into the images to
 fetch packages during build, and then unset them at the end to avoid having
-them carry through to the environment of the final images. Note however, it's
+them carry through to the environment of the final images. Note, however, it's
 not possible to drop the info completely using this method; it will still be
 visible in the layers of the image.
 
 To set the proxy settings, we can add this to the template's header block:
 
-.. code-block:: ini
+.. code-block:: docker
 
    ENV http_proxy=https://evil.corp.proxy:80
    ENV https_proxy=https://evil.corp.proxy:80
 
 To unset the proxy settings, we can add this to the template's footer block:
 
-.. code-block:: ini
+.. code-block:: docker
 
    ENV http_proxy=""
    ENV https_proxy=""
@@ -566,7 +882,7 @@ environment variables. If the host system proxy parameters match the ones
 going to be used, no other input parameters will be needed. These are the
 variables that will be picked up from the user env:
 
-.. code-block:: ini
+.. code-block:: docker
 
    HTTP_PROXY, http_proxy, HTTPS_PROXY, https_proxy, FTP_PROXY,
    ftp_proxy, NO_PROXY, no_proxy
@@ -574,3 +890,61 @@ variables that will be picked up from the user env:
 Also these variables could be overwritten using ``--build-args``, which have
 precedence.
 
+Docker BuildKit
+---------------
+
+When using ``--engine docker``, ``kolla-build`` builds images via
+``docker buildx build`` (Docker BuildKit) by default. This requires the
+``docker-buildx-plugin`` package to be installed.
+
+To disable BuildKit and fall back to the legacy docker-py SDK, set
+``buildkit = False`` in ``kolla-build.conf`` or pass ``--nobuildkit`` on the
+command line.
+
+To use a specific buildx builder instance (e.g. a ``docker-container`` or
+remote driver), pass ``--buildkit-builder``:
+
+.. code-block:: console
+
+   kolla-build --buildkit-builder mybuilder
+
+.. note::
+
+   ``--buildkit`` and ``--squash`` are mutually exclusive. Use one or the
+   other.
+
+Cross-compiling
+---------------
+
+It is possible to cross-compile container images in order to, e.g., build
+``aarch64`` images on a ``x86_64`` machine.
+
+To build ``ARM`` images on ``x86_64`` platform, pass the ``--base-arch`` and
+``--platform`` arguments:
+
+.. code-block:: console
+
+   kolla-build --platform linux/arm64 --base-arch aarch64
+
+.. note::
+
+   Cross-compilation is natively handled by Docker BuildKit; using BuildKit
+   (the default) is recommended for multi-platform builds.
+
+   To make this work on x86_64 platform with the docker-py based builder
+   (``--nobuildkit``) you can use tools like: `qemu-user-static
+   <https://github.com/multiarch/qemu-user-static>`_ or `binfmt
+   <https://github.com/tonistiigi/binfmt>`_.
+
+   To make this work on Apple Silicon you can use Docker Desktop or Podman
+   Desktop to build ``x86_64`` or native ``ARM`` images.
+
+Known issues
+============
+
+#. Mirrors are unreliable.
+
+   Some of the mirrors Kolla uses can be unreliable. As a result occasionally
+   some containers fail to build. To rectify build problems, the build tool
+   will automatically attempt three retries of a build operation if the first
+   one fails. The retry count is modified with the ``--retries`` option.

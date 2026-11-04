@@ -1,0 +1,15 @@
+#!/bin/bash
+
+PROXYSQL_LIB_DIR="/var/lib/proxysql"
+
+# Remove old pid
+rm -f ${PROXYSQL_LIB_DIR}/proxysql.pid
+
+# As proxysql supports only one
+# configuration file, there is a
+# script which reads global and services
+# configs (similar to haproxy) and
+# generate single configuration file
+# from which is internal DB created
+# every time.
+kolla_proxysql_config_sync

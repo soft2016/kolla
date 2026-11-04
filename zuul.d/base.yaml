@@ -1,0 +1,110 @@
+---
+- job:
+    name: kolla-base
+    parent: base
+    timeout: 10800
+    post-timeout: 10800
+    pre-run: tests/playbooks/pre.yml
+    run: tests/playbooks/run.yml
+    post-run: tests/playbooks/post.yml
+    attempts: 5
+    roles:
+      - zuul: openstack/ansible-collection-kolla
+    required-projects:
+      - name: gnocchixyz/gnocchi
+        override-checkout: 4.7.0
+      - openstack/aodh
+      - openstack/barbican
+      - openstack/bifrost
+      - openstack/blazar
+      - openstack/blazar-dashboard
+      - openstack/blazar-nova
+      - openstack/ceilometer
+      - openstack/cinder
+      - openstack/cloudkitty
+      - openstack/cloudkitty-dashboard
+      - openstack/cyborg
+      - openstack/designate
+      - openstack/designate-dashboard
+      - openstack/glance
+      - openstack/heat
+      - openstack/heat-dashboard
+      - openstack/horizon
+      - openstack/ironic
+      - openstack/ironic-prometheus-exporter
+      - openstack/ironic-ui
+      - openstack/keystone
+      - openstack/magnum
+      - openstack/magnum-ui
+      - openstack/manila
+      - openstack/manila-ui
+      - openstack/masakari
+      - openstack/masakari-dashboard
+      - openstack/masakari-monitors
+      - openstack/mistral
+      - openstack/mistral-dashboard
+      - openstack/networking-baremetal
+      - openstack/networking-generic-switch
+      - openstack/networking-sfc
+      - openstack/neutron
+      - openstack/neutron-dynamic-routing
+      - openstack/neutron-fwaas
+      - openstack/neutron-fwaas-dashboard
+      - openstack/neutron-vpnaas
+      - openstack/neutron-vpnaas-dashboard
+      - openstack/nova
+      - openstack/octavia
+      - openstack/octavia-dashboard
+      - openstack/ovn-octavia-provider
+      - openstack/placement
+      - openstack/requirements
+      - openstack/skyline-apiserver
+      - openstack/skyline-console
+      - openstack/tacker
+      - openstack/tacker-horizon
+      - openstack/tap-as-a-service
+      - openstack/trove
+      - openstack/trove-dashboard
+      - openstack/watcher
+      - openstack/watcher-dashboard
+    irrelevant-files:
+      - ^.*\.md$
+      - ^.*\.rst$
+      - ^\..+
+      - ^contrib/
+      - ^doc/.*
+      - ^etc/.*
+      - ^LICENSE$
+      - ^lint-requirements.txt$
+      - ^releasenotes/.*$
+      - ^specs/.*$
+      - ^test-requirements.txt$
+      - ^tests/playbooks/copr-erlang-update.yml$
+      - ^tox\.ini$
+      - ^zuul\.d/
+    vars:
+      base_arch: "{{ 'aarch64' if 'arm64' in zuul.job else 'x86_64' }}"
+      base_distro: "{{ zuul.job.split('-').2 }}"
+      base_distro_version: "{{ zuul.job.split('-').3 }}"
+      publisher: false
+      container_engine: "docker"
+    extra-vars:
+      kolla_logs_dir: "{{ zuul_output_dir }}/logs/kolla"
+      kolla_build_logs_dir: "{{ kolla_logs_dir }}/build"
+      virtualenv_path: "/tmp/kolla-virtualenv"
+      kolla_build_template_overrides_path: "{{ zuul.executor.work_root }}/\
+      {{ zuul.projects['opendev.org/openstack/kolla'].src_dir }}\
+      /tests/templates/template_overrides.j2"
+
+- job:
+    name: kolla-base-podman
+    parent: kolla-base
+    vars:
+      container_engine: "podman"
+      configure_ephemeral_mountpoint: "/var/lib/containers"
+
+- job:
+    name: kolla-build-no-infra-wheels-base
+    parent: kolla-base
+    vars:
+      use_infra_wheels_mirror: false

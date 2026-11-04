@@ -1,0 +1,15 @@
+FROM {{ namespace }}/{{ image_prefix }}ovn-sb-db-server:{{ tag }}
+{% block labels %}
+LABEL maintainer="{{ maintainer }}" name="{{ image_name }}"
+{% endblock %}
+
+{% block ovn_sb_db_server_header %}{% endblock %}
+
+{% import "macros.j2" as macros with context %}
+
+COPY extend_start.sh /usr/local/bin/kolla_ovn_extend_start
+RUN chmod 644 /usr/local/bin/kolla_ovn_extend_start
+
+{{ macros.kolla_patch_sources() }}
+{% block ovn_sb_db_relay_footer %}{% endblock %}
+{% block footer %}{% endblock %}

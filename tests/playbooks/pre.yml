@@ -1,15 +1,8 @@
 ---
-- hosts: all
-  become: true
+- name: Zuul pre
+  hosts: all
+  vars_files:
+    - ../vars/zuul.yml
   roles:
-    - collectd
-  tasks:
-    - name: Install dbus for debian system
-      apt: name=dbus
-      when: ansible_os_family == 'Debian'
-
-    - name: Install ansible
-      pip:
-        name: ansible
-      when:
-        - inventory_hostname == "primary"
+    - configure-ephemeral
+    - kolla-build-deps

@@ -54,6 +54,27 @@ The `kolla_set_configs`_ script understands the following attributes:
   * **merge**: merges the source directory into the target directory instead of
     replacing it. Boolean, defaults to ``false``.
 
+* **directories**: create directories inside the container if they do not
+  exist, and set their ownership and permissions. A list of dicts, each
+  containing the following attributes:
+
+  * **path** (required): the path to the directory to create.
+  * **owner** (required): the ``user:group`` to change ownership to. ``user``
+    is synonymous to ``user:user``. Must be user and group names, not uid/gid.
+  * **perm** (required): the unix permissions to set to the directory.
+    Must be passed in the numeric octal form.
+
+* **files**: create empty files inside the container if they do not
+  exist, and set their ownership and permissions. A list of dicts, each
+  containing the following attributes:
+
+  * **path** (required): the path to the file to create. Parent directories
+    must already exist. Glob patterns are not supported.
+  * **owner** (required): the ``user:group`` to change ownership to. ``user``
+    is synonymous to ``user:user``. Must be user and group names, not uid/gid.
+  * **perm** (required): the unix permissions to set to the file.
+    Must be passed in the numeric octal form.
+
 * **permissions**: change the permissions and/or ownership of files or
   directories inside the container. A list of dicts, each containing the
   following attributes:
@@ -65,6 +86,9 @@ The `kolla_set_configs`_ script understands the following attributes:
     Must be passed in the numeric octal form.
   * **recurse**: whether to apply the change recursively over the target
     directory. Boolean, defaults to ``false``.
+  * **exclude**: array of names of the directories or files to be excluded when
+    ``recurse`` is set to ``true``. Supports Python regular expressions.
+    Defaults to empty array.
 
 Here is an example configuration file:
 
@@ -81,11 +105,19 @@ Here is an example configuration file:
                 "optional": false
             }
         ],
+        "directories": [
+            {
+                "path": "/var/lib/trove",
+                "owner": "trove",
+                "perm": "0755"
+            }
+        ],
         "permissions": [
             {
                 "path": "/var/log/kolla/trove",
                 "owner": "trove:trove",
-                "recurse": true
+                "recurse": true,
+                "exclude": ["/var/log/^snapshot.*"]
             }
         ]
     }
@@ -93,27 +125,17 @@ Here is an example configuration file:
 Passing the configuration file to the container
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-The configuration can be either passed via the ``KOLLA_CONFIG`` environment
-variable or as a file bind-mounted into the container. When bind-mounting the
-configuration file, the ``KOLLA_CONFIG_FILE`` environment variable controls
-where the file is located in the container, the default path being
+The configuration to the container can be passed through a dedicated path:
 ``/var/lib/kolla/config_files/config.json``.
-
-Passing the configuration file as environment variable:
-
-.. code-block:: console
-
-   docker run -e KOLLA_CONFIG_STRATEGY=COPY_ALWAYS \
-       -e KOLLA_CONFIG='{ "command": "...", "permissions": [ { "path": "...", } ] }' \
-       kolla-image
+It is advised to ensure this path is mounted read-only for security reasons.
 
 Mounting the configuration file in the container:
 
 .. code-block:: console
 
    docker run -e KOLLA_CONFIG_STRATEGY=COPY_ALWAYS \
-       -e KOLLA_CONFIG_FILE=/config.json \
-       -v /path/to/config.json:/config.json kolla-image
+       -v /path/to/config.json:/var/lib/kolla/config_files/config.json:ro \
+       kolla-image
 
 .. _kolla_api_environment_variables:
 
@@ -126,10 +148,6 @@ Variables to pass to the containers
 The Kolla containers also understand some environment variables to change their
 behavior at runtime:
 
-* **KOLLA_CONFIG**: load kolla config from the environment, takes precedence
-  over ``KOLLA_CONFIG_FILE``.
-* **KOLLA_CONFIG_FILE**: path to kolla json config file, defaults to
-  ``/var/lib/kolla/config_files/config.json``.
 * **KOLLA_CONFIG_STRATEGY** (required): Defines how the :ref:`kolla_start
   script <kolla_api_external_config>` copies the configuration file. Must be
   one of:
@@ -149,6 +167,10 @@ behavior at runtime:
   code defined in the images ``extend_start.sh`` scripts. Not set by default.
 * **KOLLA_UPGRADE**: if set, and supported by the image, runs the upgrade code
   defined in the images ``extend_start.sh`` scripts. Not set by default.
+* **KOLLA_UPGRADE_CHECK**: if set, and supported by the image, runs the
+  ``<service>-status upgrade check`` command, defined in the images
+  ``extend_start.sh`` scripts. Currently, this is hard-coded to just
+  ``nova-status upgrade check``. Not set by default.
 * **KOLLA_OSM**: if set, and supported by the image, runs the online database
   migration code defined in the images ``extend_start.sh`` scripts. Not set by
   default.
@@ -158,7 +180,7 @@ or off, such as the horizon container that looks for ``ENABLE_XXX`` variables
 where ``XXX`` is a horizon plugin name. These are generally defined in the
 container-specific ``extend_start.sh`` script, example for `horizon`_.
 
-.. _horizon: https://github.com/openstack/kolla/blob/master/docker/horizon/extend_start.sh
+.. _horizon: https://opendev.org/openstack/kolla/src/branch/master/docker/horizon/extend_start.sh
 
 Variables available in the containers
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -166,9 +188,5 @@ Variables available in the containers
 The following variables available in all images and can be evaluated in
 scripts:
 
-* **KOLLA_BASE_DISTRO**: ``base_distro`` used to build the image (e.g. centos,
+* **KOLLA_BASE_DISTRO**: ``base_distro`` used to build the image (e.g. rocky,
   ubuntu)
-* **KOLLA_INSTALL_TYPE**: ``install_type`` used to build the image (binary,
-  source)
-* **KOLLA_INSTALL_METATYPE**: ``install_metatype`` used to build the image
-  (rdo,  ...)

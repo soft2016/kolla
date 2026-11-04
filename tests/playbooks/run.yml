@@ -1,76 +1,90 @@
 ---
-- hosts: all
+- name: Zuul run
+  hosts: all
+  vars_files:
+    - ../vars/zuul.yml
   vars:
-    kolla_inventory_path: "{{ zuul.project.src_dir }}/inventory"
-    nodepool_rdo_proxy: "{{ zuul_site_mirror_fqdn }}:8080/rdo"
-    nodepool_pypi_mirror: "http://{{ zuul_site_mirror_fqdn }}:8080/pypi/simple"
-    nodepool_mirror_host: "{{ zuul_site_mirror_fqdn }}"
-    nodepool_npmjs_proxy: "http://{{ zuul_site_mirror_fqdn }}:8080/registry.npmjs/"
-    nodepool_elastic_proxy: "http://{{ zuul_site_mirror_fqdn }}:8080/elastic/"
-    nodepool_grafana_proxy: "http://{{ zuul_site_mirror_fqdn }}:8080/grafana/"
-    nodepool_opendaylight_proxy: "http://{{ zuul_site_mirror_fqdn }}:8080/opendaylight/"
-    nodepool_oraclelinux_proxy: "http://{{ zuul_site_mirror_fqdn }}:8080/oraclelinux/"
+    tag_suffix: "{{ '-aarch64' if base_arch == 'aarch64' else '' }}"
+    kolla_build_config:
+      DEFAULT:
+        debug: true
+        logs_dir: "{{ kolla_build_logs_dir }}"
+        quiet: true
+        base: "{{ base_distro }}"
+        base_arch: "{{ base_arch }}"
+        engine: "{{ container_engine }}"
+        template_override: /etc/kolla/template_overrides.j2
+        # NOTE(yoctozepto): to avoid issues with IPv6 not enabled in the docker daemon
+        # and since we don't need isolated networks here, use host networking
+        network_mode: host
   tasks:
-    - name: generate kolla inventory file
-      copy:
-        dest: "{{ kolla_inventory_path }}"
-        content: |
-          {% for host in hostvars %}
-          {{ host }} ansible_host={{ hostvars[host]['ansible_host'] }} ansible_user={{ hostvars[host]['ansible_user'] }}
-          {% endfor %}
-
-    - name: setup logging
-      shell:
-        cmd: |
-          mkdir logs
-          ln -s $(pwd)/logs /tmp/logs
-          mkdir -p /tmp/logs/{ansible,build,kolla,kolla_configs}
-        executable: /bin/bash
-        chdir: "{{ zuul.project.src_dir }}"
-
-    - name: copy setup script
-      copy:
-        src: "{{ zuul.executor.work_root }}/{{ zuul.project.src_dir }}/tools/setup_{{ ansible_os_family }}.sh"
-        dest: /tmp/setup.sh
-        mode: 0755
-
-    - name: run node setup script
-      shell: /tmp/setup.sh
-      become: true
-
-    - name: changing permission of Docker socket to 666
-      file:
-        path: /run/docker.sock
-        mode: 666
-      become: true
-
     - name: Ensure /etc/kolla exists
-      file:
+      ansible.builtin.file:
         path: /etc/kolla
         state: directory
-        mode: 0777
+        mode: "0777"
       become: true
 
-    - name: Template kolla-build.conf
-      template:
-        src: "{{ zuul.executor.work_root }}/{{ zuul.project.src_dir }}/tests/templates/kolla-build.conf.j2"
-        dest: /etc/kolla/kolla-build.conf
+    - name: Use ubuntu/debian base image from mirror
+      vars:
+        kolla_mirror_config:
+          DEFAULT:
+            base_image: "quay.io/opendevmirror/{{ base_distro }}"
+      ansible.builtin.set_fact:
+        kolla_build_config: "{{ kolla_build_config | combine(kolla_mirror_config, recursive=True) }}"
+      when: base_distro in ['debian', 'ubuntu']
 
-    - name: Template override
-      template:
-        src: "{{ zuul.executor.work_root }}/{{ zuul.project.src_dir }}/tests/templates/template_overrides.j2"
-        dest: /etc/kolla/template_overrides.j2
+    - name: Add publisher config
+      vars:
+        kolla_publisher_config:
+          DEFAULT:
+            namespace: "{{ kolla_namespace }}"
+            tag: "{{ zuul.branch | basename }}-{{ base_distro }}-{{ base_distro_version }}{{ tag_suffix }}"
+      ansible.builtin.set_fact:
+        kolla_build_config: "{{ kolla_build_config | combine(kolla_publisher_config, recursive=True) }}"
+      when:
+        - publisher
 
-    - shell:
-        cmd: |
-          set -e
-          set -x
+    - name: Add external docker dir config
+      vars:
+        kolla_build_external_docker_config:
+          DEFAULT:
+            docker_dir: "{{ ansible_user_dir }}/{{ zuul.project.src_dir }}/tests/templates/docker"
+          releaser:
+            type: git
+            reference: master
+            location: "https://opendev.org/openstack/releases.git"
+          releaser-user:
+            uid: 56000
+            gid: 56000
+      ansible.builtin.set_fact:
+        kolla_build_config: "{{ kolla_build_config | combine(kolla_build_external_docker_config, recursive=True) }}"
+      when:
+        - not publisher
 
-          export ACTION={{ action }}
-          export BASE_DISTRO={{ base_distro }}
-          export INSTALL_TYPE={{ install_type }}
-          export IN_PROJECT_JOBS=1
-          tools/gate_run.sh
-        executable: /bin/bash
-        chdir: "{{ zuul.project.src_dir }}"
-      environment: '{{ zuul | zuul_legacy_vars }}'
+    - name: Set pip mirror config
+      vars:
+        kolla_pip_mirror_config:
+          DEFAULT:
+            pip_index_url: "{{ nodepool_pypi_mirror }}"
+            pip_trusted_host: "{{ nodepool_mirror_host }}"
+      ansible.builtin.set_fact:
+        kolla_build_config: "{{ kolla_build_config | combine(kolla_pip_mirror_config, recursive=True) }}"
+
+    - name: Set up base repo overrides
+      vars:
+        kolla_repos_yaml_config:
+          DEFAULT:
+            repos_yaml: /etc/kolla/repos.yaml
+      ansible.builtin.set_fact:
+        kolla_build_config: "{{ kolla_build_config | combine(kolla_repos_yaml_config, recursive=True) }}"
+        kolla_build_repos_yaml_path: "{{ zuul.executor.work_root }}/{{ zuul.projects['opendev.org/openstack/kolla'].src_dir }}/tests/templates/repos.yaml.j2"
+      when: base_distro in ['debian', 'rocky', 'ubuntu']
+
+    - name: Import kolla-build-config role
+      import_role:
+        name: kolla-build-config
+
+    - name: Import kolla-build role
+      import_role:
+        name: kolla-build

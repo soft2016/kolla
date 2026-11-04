@@ -1,0 +1,13 @@
+---
+- project-template:
+    name: kolla-scenario-mariadb
+    description: |
+      Runs Kolla-Ansible MariaDB scenario jobs on particular Kolla changes.
+    check:
+      jobs:
+        - kolla-ansible-debian-trixie-mariadb: &files
+            files:
+              - ^kolla/common/sources.yaml
+              - ^kolla/docker/(base|mariadb-server)/
+        - kolla-ansible-rocky-10-mariadb: *files
+        - kolla-ansible-ubuntu-noble-mariadb: *files
